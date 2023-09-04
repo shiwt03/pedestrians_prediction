@@ -3,14 +3,48 @@ import os.path as osp
 import tempfile
 from argparse import ArgumentParser
 
+import torch
 import mmcv
 
 from mmtrack.apis import inference_mot, init_model
+from LSTM import LstmRNN
+
+
+def init_LSTM(input_size, hidden_size=1, output_size=1, num_layers=1):
+    """
+
+    Args:
+        input_size: feature size
+        hidden_size: number of hidden units
+        output_size: number of output
+        num_layers: layers of LSTM to stack
+    Returns:
+        LSTMmodel
+
+    The args must be consistent with the trained model
+
+    """
+    model = LstmRNN(input_size, hidden_size, output_size, num_layers)
+    return model
+
+
+def convert_data(track_results):
+    """
+    Args:
+        track_results: list[array], shape:[length]
+                      array_shape:[id, bbox]
+
+    Returns:
+        tensor shape:[length, batch, num_features]
+    """
+
+    pass  # TODO: convert track data to LSTM input data
 
 
 def main():
     parser = ArgumentParser()
     parser.add_argument('config', help='config file')
+    parser.add_argument('weight', help='path_to_LSTM_weight')
     parser.add_argument('--input', help='input video file or folder')
     parser.add_argument(
         '--output', help='output video file (mp4 format) or folder')
@@ -34,6 +68,8 @@ def main():
     parser.add_argument('--fps', help='FPS of the output video')
     args = parser.parse_args()
     assert args.output or args.show
+
+
     # load images
     if osp.isdir(args.input):
         imgs = sorted(
@@ -44,6 +80,8 @@ def main():
     else:
         imgs = mmcv.VideoReader(args.input)
         IN_VIDEO = True
+
+
     # define output
     if args.output is not None:
         if args.output.endswith('.mp4'):
@@ -67,14 +105,22 @@ def main():
         fps = int(fps)
 
     # build the model from a config file and a checkpoint file
-    model = init_model(args.config, args.checkpoint, device=args.device)
+    track_model = init_model(args.config, args.checkpoint, device=args.device)
 
     prog_bar = mmcv.ProgressBar(len(imgs))
     # test and show/save the images
+
+    track_results = []
+
     for i, img in enumerate(imgs):
         if isinstance(img, str):
             img = osp.join(args.input, img)
-        result = inference_mot(model, img, frame_id=i)
+        result = inference_mot(track_model, img, frame_id=i)
+
+        track_results.append(result['track_bboxes'][0])
+        # print(result['track_bboxes'][0].shape)
+        # result format: dict, keys: 'track_bboxes'
+        #                      values: list, list[0]:array ([id, bbox])
         if args.output is not None:
             if IN_VIDEO or OUT_VIDEO:
                 out_file = osp.join(out_path, f'{i:06d}.jpg')
@@ -82,7 +128,7 @@ def main():
                 out_file = osp.join(out_path, img.rsplit(os.sep, 1)[-1])
         else:
             out_file = None
-        model.show_result(
+        track_model.show_result(
             img,
             result,
             score_thr=args.score_thr,
@@ -96,6 +142,23 @@ def main():
         print(f'making the output video at {args.output} with a FPS of {fps}')
         mmcv.frames2video(out_path, args.output, fps=fps, fourcc='mp4v')
         out_dir.cleanup()
+
+    #build LSTM model
+    LSTM_model = init_LSTM(input_size=2, hidden_size=1, output_size=1, num_layers=1)
+    if os.path.isfile(args.weight):
+        state_dict = LSTM_model.state_dict()
+        checkpoint = torch.load(args.weight)['state_dict']
+        # print(checkpoint['state_dict'].keys())
+        pretrained_dict = {k: v for k, v in checkpoint.items() if k in state_dict}
+        print(pretrained_dict.keys())
+        state_dict.update(pretrained_dict)
+        LSTM_model.load_state_dict(state_dict)
+    else:
+        print("=> no checkpoint found at '{}'".format(args.weight))
+        return
+
+    input_data = convert_data(track_results)
+    prediction = LSTM_model(input_data)
 
 
 if __name__ == '__main__':
