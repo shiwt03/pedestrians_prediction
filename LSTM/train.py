@@ -1,141 +1,77 @@
-# -*- coding:UTF-8 -*-
 import numpy as np
 import torch
-from torch import nn
-import matplotlib.pyplot as plt
+import torch.nn as nn
+import torch.optim as optim
+from tqdm import tqdm
+
+from get_data import getdata
+from loss.dilate_loss import dilate_loss
+
+mot_root = 'D:\DL_Workspace\pedestrians_prediction\data\MOT20'
+scene_id = 3
 
 
-# Define LSTM Neural Networks
-class LstmRNN(nn.Module):
-    """
-        Parameters：
-        - input_size: feature size
-        - hidden_size: number of hidden units
-        - output_size: number of output
-        - num_layers: layers of LSTM to stack
-    """
+class LSTM(nn.Module):
+    def __init__(self, input_size, hidden_size, num_layers, output_size):
+        super(LSTM, self).__init__()
+        # 初始化参数
+        self.input_size = input_size
+        self.hidden_size = hidden_size
+        self.num_layers = num_layers
+        self.output_size = output_size
 
-    def __init__(self, input_size, hidden_size=1, output_size=1, num_layers=1):
-        super().__init__()
+        self.lstm = nn.LSTM(input_size, hidden_size, num_layers, batch_first=True)
 
-        self.lstm = nn.LSTM(input_size, hidden_size, num_layers)  # utilize the LSTM model in torch.nn
-        self.forwardCalculation = nn.Linear(hidden_size, output_size)
+        self.fc = nn.Linear(hidden_size, output_size)
 
-    def forward(self, _x):
-        x, _ = self.lstm(_x)  # _x is input, size (seq_len, batch, input_size)
-        s, b, h = x.shape  # x is output, size (seq_len, batch, hidden_size)
-        x = x.view(s * b, h)
-        x = self.forwardCalculation(x)
-        x = x.view(s, b, -1)
-        return x
+    def forward(self, x):
+        h0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size).cuda()
+        c0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size).cuda()
+
+        out, (hn, cn) = self.lstm(x, (h0, c0))
+
+        out = out[:, 50:, :]
+
+        out = self.fc(out)
+        return out
 
 
 if __name__ == '__main__':
-    # create database
-    data_len = 200
-    t = np.linspace(0, 12 * np.pi, data_len)
-    sin_t = np.sin(t)
-    cos_t = np.cos(t)
+    model = LSTM(2, 20, 2, 2)
+    model.cuda()
+    criterion = nn.MSELoss()
+    optimizer = optim.Adam(model.parameters(), lr=0.0001)
 
-    dataset = np.zeros((data_len, 2))
-    dataset[:, 0] = sin_t
-    dataset[:, 1] = cos_t
-    dataset = dataset.astype('float32')
+    train_data = getdata(mot_root, scene_id)
+    input_seq_len = 100
+    pred_seq_len = 50
+    x_train = []
+    y_train = []
+    for key, value in train_data.items():
+        if len(value) < input_seq_len + pred_seq_len:
+            continue
+        x_train.append(np.array(value[:input_seq_len]))
+        y_train.append(np.array(value[input_seq_len:(input_seq_len + pred_seq_len)]))
 
-    # plot part of the original dataset
-    plt.figure()
-    plt.plot(t[0:60], dataset[0:60, 0], label='sin(t)')
-    plt.plot(t[0:60], dataset[0:60, 1], label='cos(t)')
-    plt.plot([2.5, 2.5], [-1.3, 0.55], 'r--', label='t = 2.5')  # t = 2.5
-    plt.plot([6.8, 6.8], [-1.3, 0.85], 'm--', label='t = 6.8')  # t = 6.8
-    plt.xlabel('t')
-    plt.ylim(-1.2, 1.2)
-    plt.ylabel('sin(t) and cos(t)')
-    plt.legend(loc='upper right')
+    x_train = torch.from_numpy(np.array(x_train)).cuda()
+    y_train = torch.from_numpy(np.array(y_train)).cuda()
 
-    # choose dataset for training and testing
-    train_data_ratio = 0.5  # Choose 80% of the data for testing
-    train_data_len = int(data_len * train_data_ratio)
-    train_x = dataset[:train_data_len, 0]
-    train_y = dataset[:train_data_len, 1]
-    INPUT_FEATURES_NUM = 1
-    OUTPUT_FEATURES_NUM = 1
-    t_for_training = t[:train_data_len]
+    # print(x_train.shape)
+    # print(y_train.shape)
 
-    # test_x = train_x
-    # test_y = train_y
-    test_x = dataset[train_data_len:, 0]
-    test_y = dataset[train_data_len:, 1]
-    t_for_testing = t[train_data_len:]
+    # x_train = torch.randn(100, 50, 10)
+    # y_train = torch.randn(100, 5)
 
-    # ----------------- train -------------------
-    train_x_tensor = train_x.reshape(-1, 5, INPUT_FEATURES_NUM)  # set batch size to 5
-    train_y_tensor = train_y.reshape(-1, 5, OUTPUT_FEATURES_NUM)  # set batch size to 5
+    epochs = 20000
 
-    # transfer data to pytorch tensor
-    train_x_tensor = torch.from_numpy(train_x_tensor)
-    train_y_tensor = torch.from_numpy(train_y_tensor)
-    # test_x_tensor = torch.from_numpy(test_x)
-
-    lstm_model = LstmRNN(INPUT_FEATURES_NUM, 16, output_size=OUTPUT_FEATURES_NUM, num_layers=1)  # 16 hidden units
-    print('LSTM model:', lstm_model)
-    print('model.parameters:', lstm_model.parameters)
-
-    loss_function = nn.MSELoss()
-    optimizer = torch.optim.Adam(lstm_model.parameters(), lr=1e-2)
-
-    max_epochs = 10000
-    for epoch in range(max_epochs):
-        output = lstm_model(train_x_tensor)
-        loss = loss_function(output, train_y_tensor)
-
+    t_epoch = tqdm(range(epochs))
+    for epoch in t_epoch:
+        model.train()
+        y_pred = model(x_train)
+        loss = criterion(y_pred, y_train)
+        # loss = dilate_loss(y_pred[:, :, 0], y_train[:, :, 0]) + dilate_loss(y_pred[:, :, 1], y_train[:, :, 1])
         loss.backward()
         optimizer.step()
         optimizer.zero_grad()
-
-        if loss.item() < 1e-4:
-            print('Epoch [{}/{}], Loss: {:.5f}'.format(epoch + 1, max_epochs, loss.item()))
-            print("The loss value is reached")
-            break
-        elif (epoch + 1) % 100 == 0:
-            print('Epoch: [{}/{}], Loss:{:.5f}'.format(epoch + 1, max_epochs, loss.item()))
-
-    # prediction on training dataset
-    predictive_y_for_training = lstm_model(train_x_tensor)
-    predictive_y_for_training = predictive_y_for_training.view(-1, OUTPUT_FEATURES_NUM).data.numpy()
-
-    # torch.save(lstm_model.state_dict(), 'model_params.pkl') # save model parameters to files
-
-    # ----------------- test -------------------
-    # lstm_model.load_state_dict(torch.load('model_params.pkl'))  # load model parameters from files
-    lstm_model = lstm_model.eval()  # switch to testing model
-
-    # prediction on test dataset
-    test_x_tensor = test_x.reshape(-1, 5,
-                                   INPUT_FEATURES_NUM)  # set batch size to 5, the same value with the training set
-    test_x_tensor = torch.from_numpy(test_x_tensor)
-
-    predictive_y_for_testing = lstm_model(test_x_tensor)
-    predictive_y_for_testing = predictive_y_for_testing.view(-1, OUTPUT_FEATURES_NUM).data.numpy()
-
-    # ----------------- plot -------------------
-    plt.figure()
-    plt.plot(t_for_training, train_x, 'g', label='sin_trn')
-    plt.plot(t_for_training, train_y, 'b', label='ref_cos_trn')
-    plt.plot(t_for_training, predictive_y_for_training, 'y--', label='pre_cos_trn')
-
-    plt.plot(t_for_testing, test_x, 'c', label='sin_tst')
-    plt.plot(t_for_testing, test_y, 'k', label='ref_cos_tst')
-    plt.plot(t_for_testing, predictive_y_for_testing, 'm--', label='pre_cos_tst')
-
-    plt.plot([t[train_data_len], t[train_data_len]], [-1.2, 4.0], 'r--', label='separation line')  # separation line
-
-    plt.xlabel('t')
-    plt.ylabel('sin(t) and cos(t)')
-    plt.xlim(t[0], t[-1])
-    plt.ylim(-1.2, 4)
-    plt.legend(loc='upper right')
-    plt.text(14, 2, "train", size=15, alpha=1.0)
-    plt.text(20, 2, "test", size=15, alpha=1.0)
-
-    plt.show()
+        # print(f"Epoch {epoch + 1}, Loss: {loss.item():.4f}")
+        t_epoch.set_postfix(loss = loss.item())

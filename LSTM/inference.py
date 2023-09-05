@@ -28,12 +28,13 @@ def init_LSTM(input_size, hidden_size=1, output_size=1, num_layers=1):
     return model
 
 
-def convert_data(track_results):
+def convert_data(track_results, base_len, pred_len):
     """
     Args:
         track_results: list[array], shape:[length]
                       array_shape:[id, bbox]
-
+        base_len: input sequence length
+        pred_len: prediction length
     Returns:
         tensor shape:[length, batch, num_features]
     """
@@ -157,7 +158,7 @@ def main():
         print("=> no checkpoint found at '{}'".format(args.weight))
         return
 
-    input_data = convert_data(track_results)
+    input_data = convert_data(track_results, base_len, pred_len)
     prediction = LSTM_model(input_data)
 
 
