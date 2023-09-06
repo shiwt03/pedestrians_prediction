@@ -24,6 +24,8 @@ img_sizes = [
     [1920, 1080],
     [1920, 734]
 ]
+
+
 def getdata(mot_root, scene_id):
     scene_name = 'MOT20-0' + str(scene_id)
     data_path = os.path.join(mot_root, 'train', scene_name, 'gt', 'gt.txt')
@@ -40,8 +42,10 @@ def getdata(mot_root, scene_id):
         id = item[1]
         if id not in data.keys():
             data[id] = []
-        data[id].append(np.array( [ (item[2] + item[4] / 2) / img_size[0], (item[3] + item[5] / 2) / img_size[1] ], dtype='float32'))
+        data[id].append(
+            np.array([(item[2] + item[4] / 2) / img_size[0], (item[3] + item[5] / 2) / img_size[1]], dtype='float32'))
     return data
+
 
 if __name__ == '__main__':
     mot_root = 'D:\DL_Workspace\pedestrians_prediction\data\MOT20'
@@ -62,6 +66,6 @@ if __name__ == '__main__':
         id = item[1]
         if id not in data.keys():
             data[id] = []
-        data[id].append( [(item[2] + item[4] / 2) / img_size[0], (item[3] + item[5] / 2)] / img_size[1] )
+        data[id].append([(item[2] + item[4] / 2) / img_size[0], (item[3] + item[5] / 2)] / img_size[1])
     for key, value in data.items():
         print(f'key:{key}, len:{len(value)}')

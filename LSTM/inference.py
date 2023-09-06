@@ -3,29 +3,37 @@ import os.path as osp
 import tempfile
 from argparse import ArgumentParser
 
+import torch.nn as nn
+
 import torch
 import mmcv
 
 from mmtrack.apis import inference_mot, init_model
-from LSTM import LstmRNN
 
 
-def init_LSTM(input_size, hidden_size=1, output_size=1, num_layers=1):
-    """
+class LSTM(nn.Module):
+    def __init__(self, input_size, hidden_size, num_layers, output_size):
+        super(LSTM, self).__init__()
+        # 初始化参数
+        self.input_size = input_size
+        self.hidden_size = hidden_size
+        self.num_layers = num_layers
+        self.output_size = output_size
 
-    Args:
-        input_size: feature size
-        hidden_size: number of hidden units
-        output_size: number of output
-        num_layers: layers of LSTM to stack
-    Returns:
-        LSTMmodel
+        self.lstm = nn.LSTM(input_size, hidden_size, num_layers, batch_first=True)
 
-    The args must be consistent with the trained model
+        self.fc = nn.Linear(hidden_size, output_size)
 
-    """
-    model = LstmRNN(input_size, hidden_size, output_size, num_layers)
-    return model
+    def forward(self, x):
+        h0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size).cuda()
+        c0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size).cuda()
+
+        out, (hn, cn) = self.lstm(x, (h0, c0))
+
+        out = out[:, 50:, :]
+
+        out = self.fc(out)
+        return out
 
 
 def convert_data(track_results, base_len, pred_len):
@@ -145,7 +153,7 @@ def main():
         out_dir.cleanup()
 
     #build LSTM model
-    LSTM_model = init_LSTM(input_size=2, hidden_size=1, output_size=1, num_layers=1)
+    LSTM_model = LSTM(2, 20, 2, 2).cuda()
     if os.path.isfile(args.weight):
         state_dict = LSTM_model.state_dict()
         checkpoint = torch.load(args.weight)['state_dict']
@@ -158,7 +166,7 @@ def main():
         print("=> no checkpoint found at '{}'".format(args.weight))
         return
 
-    input_data = convert_data(track_results, base_len, pred_len)
+    input_data = convert_data(track_results, 100, 50)
     prediction = LSTM_model(input_data)
 
 

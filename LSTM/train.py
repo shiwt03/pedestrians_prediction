@@ -5,6 +5,7 @@ import torch.optim as optim
 from tqdm import tqdm
 
 from get_data import getdata
+import random
 from loss.dilate_loss import dilate_loss
 
 mot_root = 'D:\DL_Workspace\pedestrians_prediction\data\MOT20'
@@ -45,16 +46,6 @@ if __name__ == '__main__':
     train_data = getdata(mot_root, scene_id)
     input_seq_len = 100
     pred_seq_len = 50
-    x_train = []
-    y_train = []
-    for key, value in train_data.items():
-        if len(value) < input_seq_len + pred_seq_len:
-            continue
-        x_train.append(np.array(value[:input_seq_len]))
-        y_train.append(np.array(value[input_seq_len:(input_seq_len + pred_seq_len)]))
-
-    x_train = torch.from_numpy(np.array(x_train)).cuda()
-    y_train = torch.from_numpy(np.array(y_train)).cuda()
 
     # print(x_train.shape)
     # print(y_train.shape)
@@ -67,6 +58,19 @@ if __name__ == '__main__':
     t_epoch = tqdm(range(epochs))
     for epoch in t_epoch:
         model.train()
+
+        x_train = []
+        y_train = []
+        for key, value in train_data.items():
+            if len(value) < input_seq_len + pred_seq_len:
+                continue
+            stt = random.randint(0, len(value) - input_seq_len - pred_seq_len)
+            x_train.append(np.array(value[stt:stt + input_seq_len]))
+            y_train.append(np.array(value[stt + input_seq_len:stt + input_seq_len + pred_seq_len]))
+
+        x_train = torch.from_numpy(np.array(x_train)).cuda()
+        y_train = torch.from_numpy(np.array(y_train)).cuda()
+
         y_pred = model(x_train)
         loss = criterion(y_pred, y_train)
         # loss = dilate_loss(y_pred[:, :, 0], y_train[:, :, 0]) + dilate_loss(y_pred[:, :, 1], y_train[:, :, 1])
@@ -74,4 +78,4 @@ if __name__ == '__main__':
         optimizer.step()
         optimizer.zero_grad()
         # print(f"Epoch {epoch + 1}, Loss: {loss.item():.4f}")
-        t_epoch.set_postfix(loss = loss.item())
+        t_epoch.set_postfix(loss=loss.item())
