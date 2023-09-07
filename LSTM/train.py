@@ -1,3 +1,4 @@
+import os
 import numpy as np
 import torch
 import torch.nn as nn
@@ -10,7 +11,8 @@ from loss.dilate_loss import dilate_loss
 
 mot_root = 'D:\DL_Workspace\pedestrians_prediction\data\MOT20'
 scene_id = 3
-
+model_save_path = 'checkpoint\\'
+os.makedirs(model_save_path, exist_ok=True)
 
 class LSTM(nn.Module):
     def __init__(self, input_size, hidden_size, num_layers, output_size):
@@ -53,7 +55,7 @@ if __name__ == '__main__':
     # x_train = torch.randn(100, 50, 10)
     # y_train = torch.randn(100, 5)
 
-    epochs = 20000
+    epochs = 200
 
     t_epoch = tqdm(range(epochs))
     for epoch in t_epoch:
@@ -79,3 +81,5 @@ if __name__ == '__main__':
         optimizer.zero_grad()
         # print(f"Epoch {epoch + 1}, Loss: {loss.item():.4f}")
         t_epoch.set_postfix(loss=loss.item())
+
+    torch.save(model, os.path.join(model_save_path, 'MOT0' + str(scene_id) + '_latest.pth'))

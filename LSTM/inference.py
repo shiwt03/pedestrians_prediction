@@ -3,6 +3,7 @@ import os.path as osp
 import tempfile
 from argparse import ArgumentParser
 
+import numpy as np
 import torch.nn as nn
 
 import torch
@@ -36,18 +37,25 @@ class LSTM(nn.Module):
         return out
 
 
-def convert_data(track_results, base_len, pred_len):
+def convert_data(track_results):
     """
     Args:
         track_results: list[array], shape:[length]
                       array_shape:[id, bbox]
-        base_len: input sequence length
-        pred_len: prediction length
     Returns:
         tensor shape:[length, batch, num_features]
     """
 
-    pass  # TODO: convert track data to LSTM input data
+    data = dict()
+    start_frame = dict()
+    for frame_id, result in enumerate(track_results):
+        for bbox in result:
+            obj_id = bbox[0]
+            if obj_id not in start_frame.keys():
+                start_frame[obj_id] = frame_id
+                data[obj_id] = []
+            data[obj_id].append(np.array([(bbox[1] + bbox[3]) / 2, (bbox[2] + bbox[4]) / 2], dtype='float32'))
+    return data, start_frame
 
 
 def main():
@@ -130,6 +138,7 @@ def main():
         # print(result['track_bboxes'][0].shape)
         # result format: dict, keys: 'track_bboxes'
         #                      values: list, list[0]:array ([id, bbox])
+        #                       bbox:[id, left_up_x, left_up_y, right_down_x, right_down_y, confidence_level]
         if args.output is not None:
             if IN_VIDEO or OUT_VIDEO:
                 out_file = osp.join(out_path, f'{i:06d}.jpg')
@@ -152,22 +161,46 @@ def main():
         mmcv.frames2video(out_path, args.output, fps=fps, fourcc='mp4v')
         out_dir.cleanup()
 
+
     #build LSTM model
     LSTM_model = LSTM(2, 20, 2, 2).cuda()
     if os.path.isfile(args.weight):
-        state_dict = LSTM_model.state_dict()
-        checkpoint = torch.load(args.weight)['state_dict']
-        # print(checkpoint['state_dict'].keys())
-        pretrained_dict = {k: v for k, v in checkpoint.items() if k in state_dict}
-        print(pretrained_dict.keys())
-        state_dict.update(pretrained_dict)
-        LSTM_model.load_state_dict(state_dict)
+        LSTM_model = torch.load(args.weight)
+        # state_dict = LSTM_model.state_dict()
+        # # print(torch.load(args.weight).keys())
+        # checkpoint = torch.load(args.weight)['state_dict']
+        # print(checkpoint.keys())
+        # # print(checkpoint['state_dict'].keys())
+        # pretrained_dict = {k: v for k, v in checkpoint.items() if k in state_dict}
+        # print(pretrained_dict.keys())
+        # state_dict.update(pretrained_dict)
+        # LSTM_model.load_state_dict(state_dict)
     else:
         print("=> no checkpoint found at '{}'".format(args.weight))
         return
 
-    input_data = convert_data(track_results, 100, 50)
-    prediction = LSTM_model(input_data)
+    sequence_data, start_frame = convert_data(track_results)
+    input_seq_len = 100
+    pred_seq_len = 50
+    x_test = []
+    y_test = []
+    for key, value in sequence_data.items():
+        # print(f'key:{key}, len:{len(value)}')
+        if len(value) < input_seq_len + pred_seq_len:
+            continue
+        stt = 0
+        x_test.append(np.array(value[stt:stt + input_seq_len]))
+        y_test.append(np.array(value[stt + input_seq_len:stt + input_seq_len + pred_seq_len]))
+
+    x_test = torch.from_numpy(np.array(x_test)).cuda()
+    y_test = torch.from_numpy(np.array(y_test)).cuda()
+
+    # print(sequence_data)
+    print(x_test.shape)
+
+    prediction = LSTM_model(x_test)
+    print(prediction)
+    print(y_test)
 
 
 if __name__ == '__main__':
