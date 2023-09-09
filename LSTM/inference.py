@@ -11,6 +11,18 @@ import mmcv
 
 from mmtrack.apis import inference_mot, init_model
 
+img_sizes = [
+    [1920, 1080],
+    [1920, 1080],
+    [1172, 880],
+    [1545, 1080],
+    [1654, 1080],
+    [1920, 734],
+    [1920, 1080],
+    [1920, 734]
+]
+scene_id = 4
+
 
 class LSTM(nn.Module):
     def __init__(self, input_size, hidden_size, num_layers, output_size):
@@ -54,7 +66,9 @@ def convert_data(track_results):
             if obj_id not in start_frame.keys():
                 start_frame[obj_id] = frame_id
                 data[obj_id] = []
-            data[obj_id].append(np.array([(bbox[1] + bbox[3]) / 2, (bbox[2] + bbox[4]) / 2], dtype='float32'))
+            data[obj_id].append(np.array(
+                [(bbox[1] + bbox[3]) / 2 / img_sizes[scene_id][0], (bbox[2] + bbox[4]) / 2 / img_sizes[scene_id][1]],
+                dtype='float32'))
     return data, start_frame
 
 
@@ -62,7 +76,8 @@ def main():
     parser = ArgumentParser()
     parser.add_argument('config', help='config file')
     parser.add_argument('weight', help='path_to_LSTM_weight')
-    parser.add_argument('--input', help='input video file or folder')
+    parser.add_argument('--input', default='data/MOT20/test/MOT20-0' + str(scene_id) + '/img1',
+                        help='input video file or folder')
     parser.add_argument(
         '--output', help='output video file (mp4 format) or folder')
     parser.add_argument('--checkpoint', help='checkpoint file')
@@ -82,10 +97,9 @@ def main():
         choices=['cv2', 'plt'],
         default='cv2',
         help='the backend to visualize the results')
-    parser.add_argument('--fps', help='FPS of the output video')
+    parser.add_argument('--fps', default=30, help='FPS of the output video')
     args = parser.parse_args()
     assert args.output or args.show
-
 
     # load images
     if osp.isdir(args.input):
@@ -97,7 +111,6 @@ def main():
     else:
         imgs = mmcv.VideoReader(args.input)
         IN_VIDEO = True
-
 
     # define output
     if args.output is not None:
@@ -161,8 +174,7 @@ def main():
         mmcv.frames2video(out_path, args.output, fps=fps, fourcc='mp4v')
         out_dir.cleanup()
 
-
-    #build LSTM model
+    # build LSTM model
     LSTM_model = LSTM(2, 20, 2, 2).cuda()
     if os.path.isfile(args.weight):
         LSTM_model = torch.load(args.weight)
@@ -197,6 +209,7 @@ def main():
 
     # print(sequence_data)
     print(x_test.shape)
+    # [batch, 50, 2]
 
     prediction = LSTM_model(x_test)
     print(prediction)

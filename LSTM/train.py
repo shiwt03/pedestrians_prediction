@@ -10,7 +10,7 @@ import random
 from loss.dilate_loss import dilate_loss
 
 mot_root = 'D:\DL_Workspace\pedestrians_prediction\data\MOT20'
-scene_id = 3
+scene_id = 5
 model_save_path = 'checkpoint\\'
 os.makedirs(model_save_path, exist_ok=True)
 
@@ -55,7 +55,7 @@ if __name__ == '__main__':
     # x_train = torch.randn(100, 50, 10)
     # y_train = torch.randn(100, 5)
 
-    epochs = 200
+    epochs = 20000
 
     t_epoch = tqdm(range(epochs))
     for epoch in t_epoch:
@@ -72,6 +72,9 @@ if __name__ == '__main__':
 
         x_train = torch.from_numpy(np.array(x_train)).cuda()
         y_train = torch.from_numpy(np.array(y_train)).cuda()
+
+        # print(x_train)
+        # print(y_train)
 
         y_pred = model(x_train)
         loss = criterion(y_pred, y_train)
