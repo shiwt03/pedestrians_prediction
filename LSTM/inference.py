@@ -8,6 +8,7 @@ import torch.nn as nn
 
 import torch
 import mmcv
+import matplotlib.pyplot as plt
 
 from mmtrack.apis import inference_mot, init_model
 
@@ -43,7 +44,7 @@ class LSTM(nn.Module):
 
         out, (hn, cn) = self.lstm(x, (h0, c0))
 
-        out = out[:, 50:, :]
+        out = out[:, 100:, :]
 
         out = self.fc(out)
         return out
@@ -175,7 +176,7 @@ def main():
         out_dir.cleanup()
 
     # build LSTM model
-    LSTM_model = LSTM(2, 20, 2, 2).cuda()
+    LSTM_model = LSTM(2, 50, 2, 2).cuda()
     if os.path.isfile(args.weight):
         LSTM_model = torch.load(args.weight)
         # state_dict = LSTM_model.state_dict()
@@ -191,11 +192,13 @@ def main():
         print("=> no checkpoint found at '{}'".format(args.weight))
         return
 
-    sequence_data, start_frame = convert_data(track_results)
-    input_seq_len = 100
-    pred_seq_len = 50
+    sequence_data, start_frame_dic = convert_data(track_results)
+    input_seq_len = 200
+    pred_seq_len = 100
     x_test = []
     y_test = []
+    start_frames = []
+
     for key, value in sequence_data.items():
         # print(f'key:{key}, len:{len(value)}')
         if len(value) < input_seq_len + pred_seq_len:
@@ -203,6 +206,7 @@ def main():
         stt = 0
         x_test.append(np.array(value[stt:stt + input_seq_len]))
         y_test.append(np.array(value[stt + input_seq_len:stt + input_seq_len + pred_seq_len]))
+        start_frames.append(start_frame_dic[key])
 
     x_test = torch.from_numpy(np.array(x_test)).cuda()
     y_test = torch.from_numpy(np.array(y_test)).cuda()
@@ -214,6 +218,29 @@ def main():
     prediction = LSTM_model(x_test)
     print(prediction)
     print(y_test)
+
+    prediction = prediction.cpu().detach().numpy()
+    y_test = y_test.cpu().detach().numpy()
+
+    np.save("prediction2", prediction)
+    np.save("ytest2", y_test)
+
+    for ele in range(len(prediction)):
+        pre_x = []
+        pre_y = []
+        real_x = []
+        real_y = []
+        for frame in range(pred_seq_len):
+            pre_x.append(prediction[ele][frame][0])
+            pre_y.append(prediction[ele][frame][1])
+            real_x.append(y_test[ele][frame][0])
+            real_y.append(y_test[ele][frame][1])
+        plt.plot(pre_x, pre_y)
+        plt.plot(real_x, real_y)
+        plt.xlim(0, 1)
+        plt.ylim(0, 1)
+        plt.show()
+        plt.clf()
 
 
 if __name__ == '__main__':

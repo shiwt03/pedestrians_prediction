@@ -32,22 +32,22 @@ class LSTM(nn.Module):
         c0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size).cuda()
 
         out, (hn, cn) = self.lstm(x, (h0, c0))
-
-        out = out[:, 50:, :]
-
+        # print(out.shape)
+        out = out[:, -1, :]
+        # print(out.shape)
         out = self.fc(out)
         return out
 
 
 if __name__ == '__main__':
-    model = LSTM(2, 20, 2, 2)
+    model = LSTM(2, 50, 2, 2)
     model.cuda()
     criterion = nn.MSELoss()
     optimizer = optim.Adam(model.parameters(), lr=0.0001)
 
     train_data = getdata(mot_root, scene_id)
     input_seq_len = 100
-    pred_seq_len = 50
+    seq_interval = 1
 
     # print(x_train.shape)
     # print(y_train.shape)
@@ -55,7 +55,7 @@ if __name__ == '__main__':
     # x_train = torch.randn(100, 50, 10)
     # y_train = torch.randn(100, 5)
 
-    epochs = 20000
+    epochs = 10000
 
     t_epoch = tqdm(range(epochs))
     for epoch in t_epoch:
@@ -64,20 +64,23 @@ if __name__ == '__main__':
         x_train = []
         y_train = []
         for key, value in train_data.items():
-            if len(value) < input_seq_len + pred_seq_len:
+            if len(value) < input_seq_len + seq_interval + 1:
                 continue
-            stt = random.randint(0, len(value) - input_seq_len - pred_seq_len)
-            x_train.append(np.array(value[stt:stt + input_seq_len]))
-            y_train.append(np.array(value[stt + input_seq_len:stt + input_seq_len + pred_seq_len]))
+            stt = random.randint(0, len(value) - input_seq_len - seq_interval - 1)
+            x_train.append(np.array(value[stt:stt + input_seq_len:seq_interval]))
+            y_train.append(np.array(value[stt + input_seq_len:stt + input_seq_len + seq_interval:seq_interval]))
 
         x_train = torch.from_numpy(np.array(x_train)).cuda()
         y_train = torch.from_numpy(np.array(y_train)).cuda()
 
-        # print(x_train)
-        # print(y_train)
+        if epoch == 0:
+            print(x_train.shape)
+            print(y_train.shape)
 
         y_pred = model(x_train)
-        loss = criterion(y_pred, y_train)
+        # print(y_pred.shape)
+        # print(y_train.squeeze().shape)
+        loss = criterion(y_pred, y_train.squeeze())
         # loss = dilate_loss(y_pred[:, :, 0], y_train[:, :, 0]) + dilate_loss(y_pred[:, :, 1], y_train[:, :, 1])
         loss.backward()
         optimizer.step()
@@ -85,4 +88,4 @@ if __name__ == '__main__':
         # print(f"Epoch {epoch + 1}, Loss: {loss.item():.4f}")
         t_epoch.set_postfix(loss=loss.item())
 
-    torch.save(model, os.path.join(model_save_path, 'MOT0' + str(scene_id) + '_latest.pth'))
+    torch.save(model, os.path.join(model_save_path, 'MOT0' + str(scene_id) + '_latest8_interval1.pth'))
