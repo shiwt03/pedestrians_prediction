@@ -8,6 +8,18 @@ mmcv-full 1.6.1
 
 mmtrack 0.14.0
 
+
+### 数据集准备
+#### MOT20数据集
+下载链接 <https://motchallenge.net/>
+```
+pedestrians_prediction
+├── data
+|   ├── MOT20
+|   |   ├── train
+|   |   ├── test
+```
+
 ### 训练
 
 ```
